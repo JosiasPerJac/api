@@ -1,2 +1,11 @@
+[project]
+name = "api"
+version = "0.1.0"
+description = "Mi API con FastAPI"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+]
+
 [tool.fastapi]
 entrypoint = "main:app"
