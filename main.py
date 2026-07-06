@@ -1,5 +1,7 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Form, Response, HTTPException, status
+from typing import Annotated
 from models.item import Item
+from models.form_data import FormData
 
 app = FastAPI()
 
@@ -33,8 +35,9 @@ def read_item(skip: int = 0, limit: int = 10, q: str | None = None):
     return results
 
 
+# Esta es la función original que recibe JSON
 @app.post("/items/")
-def create_item(item: Item):
+def create_item_json(item: Item):
     item_dict = item.model_dump()
     if item_dict is not None:
         fake_items_db.append(item_dict)
@@ -60,3 +63,38 @@ def update_item_with_query(item_name: str, item: Item, q: str | None = None):
                 response.update({"q": q})
             return response
     return {"error": "Item not found"}
+
+
+@app.post("/items_form/")
+def create_item(
+    item_name: Annotated[str, Form()],
+    description: Annotated[str, Form()],
+    price: Annotated[float, Form()],
+    tax: Annotated[float, Form()]
+):
+    
+    if tax < 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tax cannot be negative."
+        )
+
+    for fake_item in fake_items_db:
+        if fake_item["item_name"].lower() == item_name.lower():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Item '{item_name}' already exists in the database."
+            )
+        
+    form_data = FormData(
+        item_name=item_name,
+        description=description,
+        price=price,
+        tax=tax
+    )
+
+    message = f"Item '{form_data.item_name}' created successfully with description '{form_data.description}', price {form_data.price}, and tax {form_data.tax}."
+    
+    fake_items_db.append({"item_name": item_name})
+
+    return Response(content=message, status_code=201)
