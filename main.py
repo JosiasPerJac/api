@@ -1,7 +1,18 @@
+import os
 from fastapi import FastAPI, Form, Response, HTTPException, status
 from typing import Annotated
+from supabase import create_client, Client
+from dotenv import load_dotenv
 from models.item import Item
 from models.form_data import FormData
+from models.task import Task
+
+load_dotenv()
+
+supabase: Client = create_client(
+    os.getenv("SUPABASE_URL"), 
+    os.getenv("SUPABASE_PUBLISHABLE_KEY")
+)
 
 app = FastAPI()
 
@@ -27,6 +38,20 @@ def read_root():
     return {"message": "¡Hola, Fast API!"}
 
 
+@app.post("/tasks/")
+def create_task(task: Task):
+    data = supabase.table("task").insert({
+        "title": task.title,
+        "description": task.description
+    }).execute()
+    return data.data
+
+
+@app.get("/tasks/")
+def get_tasks():
+    data = supabase.table("task").select("*").execute()
+    return data.data
+
 @app.get("/items/")
 def read_item(skip: int = 0, limit: int = 10, q: str | None = None):
     results = fake_items_db[skip : skip + limit]
@@ -35,7 +60,6 @@ def read_item(skip: int = 0, limit: int = 10, q: str | None = None):
     return results
 
 
-# Esta es la función original que recibe JSON
 @app.post("/items/")
 def create_item_json(item: Item):
     item_dict = item.model_dump()
@@ -72,7 +96,6 @@ def create_item(
     price: Annotated[float, Form()],
     tax: Annotated[float, Form()]
 ):
-    
     if tax < 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -85,7 +108,7 @@ def create_item(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Item '{item_name}' already exists in the database."
             )
-        
+
     form_data = FormData(
         item_name=item_name,
         description=description,
