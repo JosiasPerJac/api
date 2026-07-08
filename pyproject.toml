@@ -3,10 +3,10 @@ name = "api"
 version = "0.1.0"
 description = "Mi API con FastAPI"
 dependencies = [
-    "fastapi[standard]==0.139.0",
-    "pydantic==2.13.4",
-    "python-dotenv==1.2.2",
-    "supabase==2.31.0"
+    "fastapi[standard]",
+    "pydantic",
+    "python-dotenv",
+    "supabase"
 ]
 
 [tool.fastapi]
