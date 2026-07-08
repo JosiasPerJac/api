@@ -11,3 +11,6 @@ dependencies = [
 
 [tool.fastapi]
 entrypoint = "main:app"
+
+[tool.setuptools]
+packages = ["models"] # O puedes usar find con un exclude, pero listar tus paquetes de python es lo más limpio
