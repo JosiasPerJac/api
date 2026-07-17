@@ -1,5 +1,7 @@
 import os
-from fastapi import FastAPI, Form, Response, HTTPException, status
+import requests
+from fastapi import FastAPI, Form, Response, HTTPException, status, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Annotated
 from supabase import create_client, Client
 from dotenv import load_dotenv
@@ -10,11 +12,30 @@ from models.task import Task
 load_dotenv()
 
 supabase: Client = create_client(
-    os.getenv("SUPABASE_URL"), 
-    os.getenv("SUPABASE_PUBLISHABLE_KEY")
+    os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_PUBLISHABLE_KEY")
 )
 
 app = FastAPI()
+
+security = HTTPBearer()
+
+
+def get_supabase_client(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> Client:
+    token = credentials.credentials
+    try:
+        client = create_client(
+            os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_PUBLISHABLE_KEY")
+        )
+        client.postgrest.auth(token)
+        return client
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token de Supabase inválido o expirado",
+        )
+
 
 fake_items_db = [
     {"item_name": "Foo"},
@@ -40,17 +61,43 @@ def read_root():
 
 @app.post("/tasks/")
 def create_task(task: Task):
-    data = supabase.table("task").insert({
-        "title": task.title,
-        "description": task.description
-    }).execute()
+    data = (
+        supabase.table("task")
+        .insert({"title": task.title, "description": task.description})
+        .execute()
+    )
     return data.data
 
 
-@app.get("/tasks/")
-def get_tasks():
-    data = supabase.table("task").select("*").execute()
-    return data.data
+@app.get("/tasks/", status_code=status.HTTP_200_OK)
+def get_tasks(supabase: Client = Depends(get_supabase_client)):
+    try:
+        response = supabase.table("task").select("*").execute()
+        return response.data
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al recuperar las tareas desde la base de datos.",
+        )
+
+
+@app.post("/auth/login-temporal")
+def login_temporal(email: str, password: str):
+    url = f"{os.getenv('SUPABASE_URL')}/auth/v1/token?grant_type=password"
+    headers = {
+        "apikey": os.getenv("SUPABASE_PUBLISHABLE_KEY"),
+        "Content-Type": "application/json",
+    }
+    payload = {"email": email, "password": password}
+
+    response = requests.post(url, json=payload, headers=headers)
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=400, detail="Credenciales incorrectas en Supabase"
+        )
+
+    return {"access_token": response.json().get("access_token")}
+
 
 @app.get("/items/")
 def read_item(skip: int = 0, limit: int = 10, q: str | None = None):
@@ -94,30 +141,26 @@ def create_item(
     item_name: Annotated[str, Form()],
     description: Annotated[str, Form()],
     price: Annotated[float, Form()],
-    tax: Annotated[float, Form()]
+    tax: Annotated[float, Form()],
 ):
     if tax < 0:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Tax cannot be negative."
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Tax cannot be negative."
         )
 
     for fake_item in fake_items_db:
         if fake_item["item_name"].lower() == item_name.lower():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Item '{item_name}' already exists in the database."
+                detail=f"Item '{item_name}' already exists in the database.",
             )
 
     form_data = FormData(
-        item_name=item_name,
-        description=description,
-        price=price,
-        tax=tax
+        item_name=item_name, description=description, price=price, tax=tax
     )
 
     message = f"Item '{form_data.item_name}' created successfully with description '{form_data.description}', price {form_data.price}, and tax {form_data.tax}."
-    
+
     fake_items_db.append({"item_name": item_name})
 
     return Response(content=message, status_code=201)
